@@ -5253,6 +5253,27 @@ class RelOptRulesTest extends RelOptTestBase {
         .check();
   }
 
+  /** Test case for an always-true condition built from a deterministic dynamic
+   * function. {@code CURRENT_DATE = CURRENT_DATE} is TRUE within a query, so the
+   * filter must be removed rather than left as an ordinary filter. */
+  @Test void testReduceDeterministicDynamicFunctionFilter() {
+    final String sql = "select * from emp where current_date = current_date";
+    sql(sql)
+        .withRule(CoreRules.FILTER_REDUCE_EXPRESSIONS)
+        .check();
+  }
+
+  /** As {@link #testReduceDeterministicDynamicFunctionFilter()}, but the
+   * always-true predicate is conjuncted with a selective predicate; only the
+   * dynamic-function predicate is removed. */
+  @Test void testReduceDeterministicDynamicFunctionAndFilter() {
+    final String sql =
+        "select * from emp where ename = 'SCOTT' and current_date = current_date";
+    sql(sql)
+        .withRule(CoreRules.FILTER_REDUCE_EXPRESSIONS)
+        .check();
+  }
+
   /** Test case for
    * <a href="https://issues.apache.org/jira/browse/CALCITE-5285">[CALCITE-5285]
    * CalcReduceExpressionsRule creates a Calc equivalent to the input when

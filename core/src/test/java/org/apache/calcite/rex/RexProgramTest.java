@@ -1150,6 +1150,54 @@ class RexProgramTest extends RexProgramTestBase {
     checkSimplify(div(vInt(), nullInt), "null:INTEGER");
   }
 
+  /** Tests that an always-true condition built from a deterministic dynamic
+   * function (for example {@code CURRENT_DATE = CURRENT_DATE}) is simplified to
+   * {@code TRUE}, so that a filter containing it can be removed. */
+  @Test void simplifyDeterministicDynamicFunction() {
+    final RexNode currentDate =
+        rexBuilder.makeCall(SqlStdOperatorTable.CURRENT_DATE);
+    final RexNode currentTimestamp =
+        rexBuilder.makeCall(SqlStdOperatorTable.CURRENT_TIMESTAMP);
+    final RexNode currentUser =
+        rexBuilder.makeCall(SqlStdOperatorTable.CURRENT_USER);
+
+    // These functions are dynamic (their plan must not be cached) but
+    // deterministic within a query and their result type is not nullable.
+    assertThat(currentDate.getType().isNullable(), is(false));
+    assertThat(SqlStdOperatorTable.CURRENT_DATE.isDynamicFunction(), is(true));
+
+    // "f IS NOT NULL" simplifies to "true" for a non-nullable dynamic function.
+    checkSimplify(isNotNull(currentDate), "true");
+    checkSimplify(isNotNull(currentTimestamp), "true");
+    checkSimplify(isNotNull(currentUser), "true");
+
+    // "f IS NULL" simplifies to "false".
+    checkSimplify(isNull(currentDate), "false");
+
+    // "f = f" reduces to "f IS NOT NULL" and then to "true".
+    checkSimplify(eq(currentDate, currentDate), "true");
+    checkSimplify(le(currentDate, currentDate), "true");
+    checkSimplify(ge(currentTimestamp, currentTimestamp), "true");
+
+    // A dynamic function with a literal argument (a timestamp precision)
+    // is also safe and simplifies to "true".
+    final RexNode currentTimestamp3 =
+        rexBuilder.makeCall(SqlStdOperatorTable.CURRENT_TIMESTAMP, literal(3));
+    checkSimplify(isNotNull(currentTimestamp3), "true");
+    checkSimplify(eq(currentTimestamp3, currentTimestamp3), "true");
+
+    // "f <> f" simplifies to "false".
+    checkSimplify(ne(currentDate, currentDate), "false");
+    checkSimplify(lt(currentDate, currentDate), "false");
+    checkSimplify(gt(currentDate, currentDate), "false");
+
+    // A non-deterministic dynamic function such as RAND must not be reduced,
+    // because the two occurrences may return different values.
+    final RexNode rand = rexBuilder.makeCall(SqlStdOperatorTable.RAND);
+    assertThat(SqlStdOperatorTable.RAND.isDeterministic(), is(false));
+    checkSimplifyUnchanged(eq(rand, rand));
+  }
+
   @Test void testSimplifyFilter() {
     final RelDataType booleanType =
         typeFactory.createSqlType(SqlTypeName.BOOLEAN);

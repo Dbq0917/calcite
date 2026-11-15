@@ -94,4 +94,24 @@ public class RelOptRulesRuntimeTest {
         .with(CalciteConnectionProperty.FORCE_DECORRELATE, forceDecorrelate)
         .withSchema("s", new ReflectiveSchema(schema));
   }
+
+  /** Verifies that an always-true condition built from a deterministic dynamic
+   * function ({@code CURRENT_DATE = CURRENT_DATE}) does not change the query
+   * result. The optimizer removes the condition, so the rewritten query must
+   * return exactly the same rows as the original query. */
+  @Test void deterministicDynamicFunctionFilterIsSemanticallyNeutral() {
+    final String[] expected = {"empid=100", "empid=110", "empid=150"};
+    tester(true, new HrSchema())
+        .query("select empid from s.emps where deptno = 10 order by empid")
+        .returnsOrdered(expected);
+    tester(true, new HrSchema())
+        .query("select empid from s.emps where deptno = 10"
+            + " and current_date = current_date order by empid")
+        .returnsOrdered(expected);
+    // A conjunction that keeps only the always-true predicate returns all rows.
+    tester(true, new HrSchema())
+        .query("select empid from s.emps where current_date = current_date"
+            + " order by empid")
+        .returnsOrdered("empid=100", "empid=110", "empid=150", "empid=200");
+  }
 }

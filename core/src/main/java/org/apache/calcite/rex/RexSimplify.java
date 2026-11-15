@@ -1705,11 +1705,32 @@ public class RexSimplify {
       if (sqlOperator.isSafeOperator()
           || RexUtil.isLosslessCast(call)
           || safeOps.contains(sqlKind)
-          || safeOperators.contains(sqlOperator)) {
+          || safeOperators.contains(sqlOperator)
+          || isSafeDynamicFunction(call)) {
         return !deep || RexVisitorImpl.visitArrayAnd(this, call.operands);
       }
 
       return false;
+    }
+
+    /**
+     * Returns whether a call to a dynamic function is safe to evaluate, i.e. it
+     * can never throw a runtime exception.
+     *
+     * <p>A dynamic function such as {@code CURRENT_DATE} or {@code CURRENT_USER}
+     * is evaluated once per query and is therefore deterministic within the
+     * query even though its plan must not be cached. Such a function is niladic
+     * or takes only literal arguments (for example a timestamp precision), so
+     * evaluating it cannot fail. Treating it as safe allows expressions such as
+     * {@code CURRENT_DATE = CURRENT_DATE} (which simplifies to
+     * {@code CURRENT_DATE IS NOT NULL}) to be reduced to {@code TRUE} when the
+     * function's type is not nullable.
+     */
+    private boolean isSafeDynamicFunction(RexCall call) {
+      final SqlOperator operator = call.getOperator();
+      return operator.isDynamicFunction()
+          && RexUtil.isDeterministic(call)
+          && RexVisitorImpl.visitArrayAnd(this, call.operands);
     }
 
     /**
